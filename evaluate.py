@@ -12,15 +12,15 @@
 10 线程并发逐样本推理 -> 计算 MAE / MSE / RMSE / 预测耗时 ->
 打印并写入 result.json。
 
-隔离说明：你的代码运行在独立子进程中，只会收到不含 age 的样本；
-测试数据与真值始终保留在评测器主进程内。探测评测器进程内存、
-命名空间或文件系统获取答案，均按作弊处理。
+你的代码在子进程中运行，输入不含 id 和 age。该脚本是本地自评工具，
+不构成操作系统安全沙箱；教师另用容器核验器执行提交。
 
-提交作业时：把 solution.py、model.py 和 result.json 一起上交
-（建议附 analysis.py 与 report.md，不计入评测）。
+提交五个文件：solution.py、model.py、analysis.py、report.md 和 result.json。
+analysis.py 与 report.md 用于过程评价，不参与模型推理。
 自评分数仅供参考，最终成绩以教师在保留数据上的复测为准。
 """
 import argparse
+import ast
 import hashlib
 import json
 import os
@@ -37,7 +37,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-EVALUATOR_VERSION = "2026.1.1"
+EVALUATOR_VERSION = "2026.2.0"
 ASSIGNMENT = "ML2026-Assignment-1"
 DEFAULT_TEST = "test_public.csv"
 CODE_FILES = ["solution.py", "model.py"]
@@ -59,8 +59,13 @@ def md5_file(path):
 def scan_forbidden():
     hits = []
     for name in CODE_FILES:
-        text = Path(name).read_text(encoding="utf-8", errors="ignore").lower()
-        hits += ["{}: {}".format(name, lib) for lib in FORBIDDEN_LIBS if lib in text]
+        tree = ast.parse(Path(name).read_text(encoding="utf-8-sig"), filename=name)
+        for node in ast.walk(tree):
+            modules = [a.name for a in node.names] if isinstance(node, ast.Import) else \
+                      [node.module or ''] if isinstance(node, ast.ImportFrom) else []
+            for module in modules:
+                if module.split('.')[0] in FORBIDDEN_LIBS:
+                    hits.append('{}:{}: {}'.format(name, node.lineno, module))
     return hits
 
 
@@ -89,6 +94,7 @@ def _forward_all(samples):
     except Exception as e:
         return None, 0.0, "初始化 Solution 失败: {}".format(e)
 
+    # Initialization includes training; report it separately from prediction time.
     n = len(samples)
     results = [None] * n
     t0 = time.perf_counter()
@@ -121,9 +127,13 @@ def _worker_main(workdir):
             line = line.strip()
             if line:
                 samples.append(json.loads(line))
+    start = time.perf_counter()
     preds, wall, error = _forward_all(samples)
+    total = time.perf_counter() - start
     out = {"predictions": preds,
-           "info": {"prediction_time_s": round(wall, 3), "error": error}}
+           "info": {"prediction_time_s": round(wall, 3),
+                    "training_and_setup_time_s": round(max(0, total-wall), 3),
+                    "total_worker_time_s": round(total, 3), "error": error}}
     with open(os.path.join(workdir, "worker_out.json"), "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False)
 
@@ -131,7 +141,7 @@ def _worker_main(workdir):
 # ---------------- 主进程：数据、指标与结果文件 ----------------
 
 def _run_worker(samples, timeout):
-    """把不含 age 的样本写入私有临时目录，子进程推理后取回预测。"""
+    """把无 ID、无标签样本写入临时目录，供本地自评子进程使用。"""
     workdir = tempfile.mkdtemp(prefix="ml2026_eval_")
     try:
         with open(os.path.join(workdir, "samples.jsonl"), "w", encoding="utf-8") as f:
@@ -168,6 +178,8 @@ def main():
     ap.add_argument("--timeout", type=int, default=3600, help="推理阶段超时秒数")
     ap.add_argument("--_worker", default=None, help=argparse.SUPPRESS)
     args = ap.parse_args()
+    if args.rows < 0 or args.timeout <= 0:
+        ap.error('--rows 必须非负，--timeout 必须为正')
 
     if args._worker:
         _worker_main(args._worker)
@@ -187,7 +199,7 @@ def main():
     if "age" not in df.columns:
         sys.exit("测试数据缺少 age 列")
     samples = [{k: _jsonable(v) for k, v in s.items()}
-               for s in df.drop(columns=["age"]).to_dict("records")]
+               for s in df.drop(columns=["age", "id"], errors='ignore').to_dict("records")]
     y_true = df["age"].to_numpy(dtype=float)
 
     print("Evaluating {} rows from {} ...".format(len(df), args.test))
@@ -204,6 +216,8 @@ def main():
 
     wall = out["info"]["prediction_time_s"]
     preds = np.asarray(preds, dtype=float)
+    if not np.all(np.isfinite(preds)):
+        sys.exit('[评测失败] 预测结果包含 NaN/Inf')
     mae = float(np.mean(np.abs(preds - y_true)))
     mse = float(np.mean((preds - y_true) ** 2))
     rmse = float(np.sqrt(mse))
@@ -224,7 +238,10 @@ def main():
                       "rows": int(len(df))},
         "metrics": {"mae": round(mae, 6), "mse": round(mse, 6), "rmse": round(rmse, 6)},
         "prediction_time_s": wall,
+        "training_and_setup_time_s": out['info'].get('training_and_setup_time_s'),
+        "total_worker_time_s": out['info'].get('total_worker_time_s'),
         "code_md5": {name: md5_file(name) for name in CODE_FILES},
+        "code_sha256": {name: hashlib.sha256(Path(name).read_bytes()).hexdigest() for name in CODE_FILES},
         "python_version": platform.python_version(),
         "platform": platform.platform(),
     }

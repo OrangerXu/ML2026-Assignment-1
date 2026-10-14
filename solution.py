@@ -6,7 +6,7 @@ from model import Model
 class Solution:
     def __init__(self):
         """
-        初始化模型架构和参数（使用随机权重作为baseline）
+        初始化随机权重示例，供你检查接口；它不是教师评分基线。
         """
         self.model = Model()
         np.random.seed(42)
@@ -30,7 +30,8 @@ class Solution:
         """
         sample_df = pd.DataFrame([sample])
 
-        X = sample_df.iloc[:, 1:]  # job, marital, education, ... poutcome
+        # The evaluator supplies the 15 features; id and age are excluded.
+        X = sample_df.drop(columns=['id', 'age'], errors='ignore')
 
         for col in X.columns:
             if X[col].dtype == 'object':

@@ -1,181 +1,107 @@
-<div align="center">
+# 作业一：年龄预测
 
-# Assignment 1: 年龄预测回归任务
+这次作业请你用客户的职业、教育、信贷等 15 个特征预测年龄。你需要自己实现模型的训练和预测，再用 SHAP 分析特征贡献，做一次有依据的特征工程实验。
 
-[![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
+`train.csv` 有 60 万行，包含年龄标签。`test_public.csv` 有 5 万行，也包含标签，供你本地检查模型。先跑通接口，再逐步改善模型，不必一开始就使用复杂算法。
 
-**🖥️ 本地自评测** | 克隆仓库，写代码，`python evaluate.py` 立刻看到你的分数
+## 从哪里开始
 
----
+建议使用 Python 3.11。教师的模型运行环境使用 Python 3.11.11、NumPy 1.24.3 和 pandas 2.0.3。
 
-</div>
-
-## 📋 任务概述
-
-> 在 `train.csv`（60 万行）上进行年龄预测回归任务：基于客户的职业、教育、信贷等特征预测客户年龄（`age` 列）。`test_public.csv`（5 万行，含真实标签）供你本地自评。
-
-### 🎓 作业要求
-
-```
-✨ 1. 使用 SHAP (SHapley Additive exPlanations) 方法分析各特征对年龄预测的贡献度
-✨ 2. 基于SHAP分析结果实施特征工程，优化模型性能
-✨ 3. 独立实现机器学习模型的核心算法逻辑，不得调用任何外部机器学习库
+```bash
+conda create -n ML2026 python=3.11
+conda activate ML2026
+pip install -r requirements.txt
+python evaluate.py --rows 5000
 ```
 
-<details>
-<summary>❌ 禁止使用的库（评测脚本会扫描源码）</summary>
-
-- sklearn / scikit-learn
-- tensorflow
-- torch / pytorch
-- keras
-- xgboost
-- lightgbm
-- catboost
-- statsmodels
-
-</details>
-
-> ⚠️ 推理阶段（`forward`）只允许从 `train.csv` 读取数据；不允许加载任何外部训练产物（pickle / joblib / npy 等模型文件）。
-
----
-
-## 📊 字段说明
-
-- age: Age of the client (numeric, 预测目标)
-- job: Type of job (categorical: "admin.", "blue-collar", "entrepreneur", etc.)
-- marital: Marital status (categorical: "married", "single", "divorced")
-- education: Level of education (categorical: "primary", "secondary", "tertiary", "unknown")
-- default: Has credit in default? (categorical: "yes", "no")
-- balance: Average yearly balance in euros (numeric)
-- housing: Has a housing loan? (categorical: "yes", "no")
-- loan: Has a personal loan? (categorical: "yes", "no")
-- contact: Type of communication contact (categorical: "unknown", "telephone", "cellular")
-- day: Last contact day of the month (numeric, 1-31)
-- month: Last contact month of the year (categorical: "jan", "feb", …, "dec")
-- duration: Last contact duration in seconds (numeric)
-- campaign: Number of contacts performed during this campaign (numeric)
-- pdays: Number of days since last contact from a previous campaign (numeric; -1 = never contacted)
-- previous: Number of contacts performed before this campaign (numeric)
-- poutcome: Outcome of the previous marketing campaign (categorical: "unknown", "other", "failure", "success")
-
----
-
-## 📈 评测指标
-
-- **MAE** (Mean Absolute Error): 平均绝对误差
-- **MSE** (Mean Squared Error): 均方误差
-- **RMSE** (Root Mean Squared Error): 均方根误差
-- **Prediction_Time**: 预测耗时
-
-> ⚡ 评测使用 **10 个并发线程** 逐样本调用你的 `forward`，请保证线程安全
-
----
-
-## 📂 项目结构
-
-```
-📦 project/
- ┣ 📄 train.csv              # 训练数据（60万行，带标签）
- ┣ 📄 test_public.csv        # 自评数据（5万行，带标签）
- ┣ 📄 evaluate.py            # 本地评测脚本
- ┣ 🔧 model.py               # 模型实现（你要改的）
- ┣ 🚀 solution.py            # 推理接口（你要改的）
- ┗ 📋 requirements.txt       # 依赖库
-```
-
-> 💡 **Baseline**: 初始 `solution.py` 使用随机权重，你需要实现自己的训练逻辑来提升性能
-
----
-
-## 💻 模型实现
-
-### 🎨 1. `model.py` - 模型类
-
-```python
-import numpy as np
-
-class Model:
-    def __init__(self):
-        """初始化模型参数"""
-        self.weights = None
-        self.bias = None
-
-    def predict(self, X):
-        """
-        Args:
-            X: numpy数组, shape (n_samples, n_features)
-        Returns:
-            numpy数组, shape (n_samples,)
-        """
-        return np.dot(X, self.weights) + self.bias
-```
-
-### 🚀 2. `solution.py` - 推理接口
+仓库里的 `solution.py` 是随机权重示例，只演示接口，不是成绩基线。它没有训练过程，预测效果很差是正常的。你可以在 `Solution.__init__` 中读取训练集，完成编码、训练并保存内存中的参数；`forward` 只做单条样本的预测。
 
 ```python
 class Solution:
-    def forward(self, sample: Dict[str, Any]) -> Dict[str, float]:
-        """接收单条样本特征字典，返回预测结果
-
-        Args:
-            sample: 不含 age 列的单条样本，例如:
-                {'id': 123, 'job': 'blue-collar', 'marital': 'married',
-                 'education': 'secondary', 'default': 'no', 'balance': 3595,
-                 'housing': 'no', 'loan': 'yes', 'contact': 'unknown',
-                 'day': 3, 'month': 'jul', 'duration': 198, 'campaign': 2,
-                 'pdays': -1, 'previous': 0, 'poutcome': 'unknown'}
-
-        Returns:
-            {'prediction': 预测的年龄(float)}
-        """
+    def forward(self, sample: dict) -> dict:
+        # sample 只含 15 个特征，不含 id 和 age
+        prediction = ...
+        return {"prediction": float(prediction)}
 ```
 
-> 💡 推荐模式：在 `Solution.__init__` 中读取 `train.csv` 完成训练并保存参数，`forward` 中只做特征处理和预测。
-> 训练请**固定随机种子**（如 `np.random.seed(42)`）：含随机性的实现若不固定种子，教师复现核验时指标可能对不上。
+评测器会用 10 个线程调用同一个 `Solution`。请让预测过程保持线程安全，例如不要在 `forward` 中修改共享权重或重新训练。训练和分析中的随机步骤应固定种子。
 
----
-
-## ⚙️ 环境
+模型改好后，运行完整自评：
 
 ```bash
-conda create -n ML python=3.8
-conda activate ML
-pip install -r requirements.txt
-```
-
----
-
-## 🚀 运行评测
-
-```bash
-# 在仓库根目录运行（与 solution.py、model.py 同级）
 python evaluate.py
-
-# 可选参数
-python evaluate.py --rows 5000                 # 只评测前 5000 行（快速试跑）
-python evaluate.py --student-id 2026001 --name 张三   # 学号姓名写入结果文件
+python evaluate.py --student-id 20260001 --name 张三
 ```
 
-评测完成后：
+评测器输出 MAE、MSE、RMSE 和耗时，并生成 `result.json`。RMSE 越小，模型在这份数据上的误差越小。`--rows` 只评测前 N 行，适合排错；请用完整自评结果提交。
 
-1. 终端打印 MAE / MSE / RMSE / 预测耗时
-2. 生成 `result.json`（含指标、代码文件 MD5、环境信息）
+## 你需要完成什么
 
-**提交作业时**：将 `solution.py`、`model.py`、`result.json` 一起上交；建议附上：
+1. 在 `solution.py` 和 `model.py` 中独立实现模型核心算法。可以使用 NumPy、pandas 和 Python 标准库，但不要调用现成的机器学习模型。
+2. 用 SHAP 解释你提交的模型。在 `analysis.py` 中保留分析代码，说明背景数据、解释样本和主要设置。分析可以使用 `shap` 与绘图库；SHAP 自身的间接依赖不属于模型核心禁库违规。
+3. 根据分析尝试特征工程，比较修改前后的效果。在 `report.md` 中说明做了什么、为什么做、结果如何。如果某个变换没有改善模型，也应如实记录。
 
-- `analysis.py`：SHAP 特征贡献分析脚本（评审时核查 SHAP 运用，不参与评测）
-- `report.md`：分析报告（SHAP 结论、特征工程依据、模型说明）
+模型核心文件禁止导入：`sklearn` / `scikit-learn`、`tensorflow`、`torch` / `pytorch`、`keras`、`xgboost`、`lightgbm`、`catboost`、`statsmodels`。`analysis.py` 中的解释对象仍须是你提交的模型，不能另用现成模型替代作业核心算法。
 
----
+模型的数据来源仅限 `train.csv`。不要把公开验证标签加入训练，不要读取其他测试文件、联网取得数据、寻找教师评测文件，或加载外部模型产物。请提交能从训练集重新训练的源码，不要提交或在源码中硬编码预训练权重和答案表。模型运行器只提供 NumPy、pandas 和标准库，额外的模型运行依赖不受支持。
 
-## ⚖️ 评分说明（请仔细阅读）
+可以查阅算法资料。报告中请注明参考来源；如果使用了 AI 工具，也请说明它帮助了哪些部分。你需要理解提交的代码，能够解释训练过程和预测步骤。复制历年解答、窃取标签和伪造实验不属于正常参考。
 
-- 自评分数（`test_public.csv` 上的结果）**仅供参考**；
-- **最终成绩以教师在保留数据上的复测为准**——教师会在与公开数据不同分布的另一份私有数据上重新运行你提交的代码；
-- 总分 = 代码效果分 + AI 代码评价分；
-- **作弊零分**：包括但不限于——直接读取/硬编码测试集答案、加载外部模型文件、探测评测器进程内存或命名空间（如堆扫描、访问主模块变量）、遍历目录寻找评测数据、抄袭网络流传的旧版本解答。你的代码运行在隔离的子进程中，只会收到不含 age 的样本；任何探测行为都会被静态扫描、复测和 AI 评审三重核查发现。
+## 交哪些文件
 
----
+请提交下面五个文件，文件名保持不变：
 
-Made with ❤️ for Machine Learning Education
+| 文件 | 内容 | 大小上限 |
+|---|---|---:|
+| `solution.py` | 训练入口和单样本预测接口 | 200000 字节 |
+| `model.py` | 模型核心算法 | 200000 字节 |
+| `analysis.py` | SHAP 分析代码 | 200000 字节 |
+| `report.md` | 分析结论、特征实验、参考与 AI 使用说明 | 80000 字节 |
+| `result.json` | 对最终源码生成的完整自评结果 | 16000 字节 |
+
+采用 UTF-8 编码。改动代码后重新自评，避免结果文件与源码版本不一致。教师运行模型时只加载 `solution.py` 和 `model.py`，请把运行所需的代码放在这两个文件里，不要依赖自己的绝对路径或额外模块。
+
+## 成绩怎样计算
+
+总分 100 分，由效果分 60 分和代码、实验过程评价 40 分组成。
+
+公开自评主要帮助你排错和比较方案。最终效果分使用教师私有复测数据：特征经过轻微扰动，标签由教师模型生成，用来检查你提交的模型与教师参考函数的一致性。这个误差与真实年龄误差的尺度不同，不能直接比较两者的 RMSE。
+
+教师会在与你相同的复测数据上运行基线。达到基线 RMSE 的 1.02 倍以内，效果分为 60；超出门槛时，效果分为 `60 × 门槛 RMSE / 你的 RMSE`。基线源码和私有数据不下发。
+
+过程评价检查算法正确性、SHAP 分析、特征实验、代码质量、合规与参考说明。AI 提供初评，教师负责复核。可疑操作或自评无法复现会进入人工检查，不会仅凭库名出现在注释里或 AI 的猜测认定作弊。确认作弊后按课程规则处理，并保留核查依据。
+
+本仓库不设置截止日期，也不设排行榜。提交方式、成绩结算和补交安排以课程通知为准。
+
+## 字段说明
+
+`age` 是预测目标；`id` 是记录编号，评测器不会把它传给模型。其余字段是模型输入：
+
+| 字段 | 含义 |
+|---|---|
+| job | 职业 |
+| marital | 婚姻状况 |
+| education | 教育程度 |
+| default | 是否有信贷违约记录 |
+| balance | 年平均余额，欧元 |
+| housing | 是否有住房贷款 |
+| loan | 是否有个人贷款 |
+| contact | 联系方式 |
+| day | 最近联系的日期，1 至 31 |
+| month | 最近联系的月份 |
+| duration | 最近联系的持续时间，秒 |
+| campaign | 本次营销中的联系次数 |
+| pdays | 距上次营销联系的天数，-1 表示未联系过 |
+| previous | 本次营销之前的联系次数 |
+| poutcome | 上次营销的结果 |
+
+## 常见问题
+
+**本地分数很好，为什么仍需复测？** 公开标签可以用于调参，容易让你高估泛化能力。教师会重新运行源码，同时检查私有数据上的表现与提交材料。
+
+**需要手写 SHAP 吗？** 不需要。手写要求针对模型核心算法；SHAP 分析可以使用工具库。报告要解释结果如何影响你的建模选择。
+
+**为什么初始化很慢？** 教师运行时会从训练集重新训练。`result.json` 分别记录训练与准备耗时、预测耗时和工作进程总耗时。教师每次公开或私有评测的预算为 1800 秒，包含训练和预测；内存上限为 2 GiB。
+
+**本地评测器是不是安全沙箱？** 它是你对自己代码的自评工具。教师使用另一个容器核验器运行提交，容器内没有测试标签，也不能联网。
